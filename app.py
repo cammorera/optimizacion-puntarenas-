@@ -5,8 +5,33 @@ import folium
 from streamlit_folium import st_folium
 from modelo_cvrp import (resolver_cvrp, CANTONES, DEMANDA, COORDS,
                           DIST_RAW, CAP, JORNADA, VELOCIDAD,
-                          T_PARADA, T_PALLET, T_RELOAD,
-                          duracion_trip, duracion_trip_solo, clasificar_clientes)
+                          T_PARADA, T_PALLET, T_RELOAD)
+
+# ── Funciones auxiliares (compatibles con modelo v1 y v2) ────
+# Se importan si existen en el modelo, si no se definen aquí.
+try:
+    from modelo_cvrp import duracion_trip, duracion_trip_solo, clasificar_clientes
+except ImportError:
+    def duracion_trip(ruta: list) -> float:
+        km      = sum(DIST_RAW[ruta[k]][ruta[k+1]] for k in range(len(ruta)-1))
+        paradas = len([n for n in ruta if n != 0])
+        pallets = sum(DEMANDA[n] for n in ruta if n != 0)
+        return (km / VELOCIDAD * 60) + paradas * T_PARADA + pallets * T_PALLET
+
+    def duracion_trip_solo(i: int) -> float:
+        km = DIST_RAW[0][i] + DIST_RAW[i][0]
+        return (km / VELOCIDAD * 60) + T_PARADA + DEMANDA[i] * T_PALLET
+
+    def clasificar_clientes():
+        dedicados_cap, dedicados_tiempo, normales = [], [], []
+        for i in range(1, 14):
+            if DEMANDA[i] > CAP:
+                dedicados_cap.append(i)
+            elif duracion_trip_solo(i) > JORNADA:
+                dedicados_tiempo.append(i)
+            else:
+                normales.append(i)
+        return dedicados_cap, dedicados_tiempo, normales
 
 st.set_page_config(page_title="CVRP Puntarenas — FIFCO", page_icon="🍺", layout="wide")
 
