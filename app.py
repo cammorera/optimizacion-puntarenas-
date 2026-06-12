@@ -1,19 +1,24 @@
 """
-app.py — Interfaz Streamlit CVRP Puntarenas · Florida Bebidas
-Tema: tonos rosados / rose-pink
+app.py — CVRP Puntarenas · Florida Bebidas
+Interfaz Streamlit con tema rosado, parámetros editables y botón Optimizar.
 """
 
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 import plotly.express as px
+
 from solver import (
-    solve, CANTONES, DEMAND, DIST, CAPACITY,
-    DEMAND_IMPERIAL, DEMAND_PILSEN, DEMAND_TROPICAL,
-    JORNADA_MIN, RELOAD_MIN,
+    solve,
+    CANTONES, DEMAND_BASE, DIST,
+    DEFAULT_CAPACITY, DEFAULT_SPEED_KMH,
+    DEFAULT_MIN_PER_STOP, DEFAULT_MIN_PER_PAL,
+    DEFAULT_RELOAD_MIN, DEFAULT_JORNADA_MIN,
 )
 
-# ── Configuración de página ───────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# CONFIGURACIÓN DE PÁGINA
+# ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="CVRP · Puntarenas",
     page_icon="🌺",
@@ -21,154 +26,192 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── CSS: paleta rosada ────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# CSS GLOBAL
+# ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-  /* Fondo general */
-  [data-testid="stAppViewContainer"] {
-      background: linear-gradient(135deg, #fff0f5 0%, #fce4ec 50%, #fdf2f8 100%);
-  }
-  [data-testid="stSidebar"] {
-      background: linear-gradient(180deg, #f8bbd0 0%, #f48fb1 100%);
-  }
-  [data-testid="stSidebar"] * {
-      color: #4a0e2a !important;
-  }
+[data-testid="stAppViewContainer"] {
+    background: linear-gradient(135deg,#fff0f5 0%,#fce4ec 55%,#fdf2f8 100%);
+}
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg,#f8bbd0 0%,#f06292 100%);
+}
+[data-testid="stSidebar"] * { color:#4a0e2a !important; }
+[data-testid="stSidebar"] .stSlider > div { color:#4a0e2a !important; }
 
-  /* Header principal */
-  .main-header {
-      background: linear-gradient(135deg, #e91e63 0%, #ad1457 60%, #880e4f 100%);
-      padding: 2rem 2.5rem;
-      border-radius: 16px;
-      margin-bottom: 1.5rem;
-      box-shadow: 0 8px 32px rgba(233,30,99,0.25);
-  }
-  .main-header h1 {
-      color: #fff !important;
-      font-size: 2.2rem;
-      font-weight: 800;
-      margin: 0;
-      letter-spacing: -0.5px;
-  }
-  .main-header p {
-      color: #fce4ec !important;
-      margin: 0.3rem 0 0;
-      font-size: 1rem;
-  }
+/* ── Header ── */
+.main-header {
+    background: linear-gradient(135deg,#e91e63 0%,#ad1457 60%,#880e4f 100%);
+    padding:1.8rem 2.2rem; border-radius:16px; margin-bottom:1.4rem;
+    box-shadow:0 8px 32px rgba(233,30,99,.25);
+}
+.main-header h1 { color:#fff !important; font-size:2rem; font-weight:800; margin:0; }
+.main-header p  { color:#fce4ec !important; margin:.25rem 0 0; font-size:.95rem; }
 
-  /* Tarjetas KPI */
-  .kpi-card {
-      background: white;
-      border-radius: 14px;
-      padding: 1.2rem 1.5rem;
-      box-shadow: 0 4px 20px rgba(233,30,99,0.12);
-      border-left: 5px solid #e91e63;
-      transition: transform 0.2s;
-  }
-  .kpi-card:hover { transform: translateY(-3px); }
-  .kpi-number {
-      font-size: 2.4rem;
-      font-weight: 800;
-      color: #c2185b;
-      line-height: 1;
-  }
-  .kpi-label {
-      font-size: 0.82rem;
-      color: #ad1457;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      margin-top: 0.3rem;
-  }
+/* ── KPI cards ── */
+.kpi-card {
+    background:#fff; border-radius:14px; padding:1.1rem 1.4rem;
+    box-shadow:0 4px 20px rgba(233,30,99,.12); border-left:5px solid #e91e63;
+}
+.kpi-number { font-size:2.1rem; font-weight:800; color:#c2185b; line-height:1.1; }
+.kpi-label  { font-size:.76rem; color:#ad1457; font-weight:700;
+              text-transform:uppercase; letter-spacing:.6px; margin-top:.25rem; }
 
-  /* Sección de tablas */
-  .section-title {
-      font-size: 1.2rem;
-      font-weight: 700;
-      color: #880e4f;
-      border-bottom: 3px solid #f48fb1;
-      padding-bottom: 0.4rem;
-      margin: 1.5rem 0 0.8rem;
-  }
+/* ── Section title ── */
+.sec-title {
+    font-size:1.1rem; font-weight:700; color:#880e4f;
+    border-bottom:3px solid #f48fb1; padding-bottom:.35rem;
+    margin:1.4rem 0 .7rem;
+}
 
-  /* Badges */
-  .badge-dedicated {
-      background: #fce4ec;
-      color: #c2185b;
-      border: 1px solid #f48fb1;
-      border-radius: 20px;
-      padding: 2px 10px;
-      font-size: 0.75rem;
-      font-weight: 700;
-  }
-  .badge-normal {
-      background: #f3e5f5;
-      color: #6a1b9a;
-      border: 1px solid #ce93d8;
-      border-radius: 20px;
-      padding: 2px 10px;
-      font-size: 0.75rem;
-      font-weight: 700;
-  }
+/* ── Optimize button ── */
+div[data-testid="stButton"] > button {
+    background:linear-gradient(135deg,#e91e63,#c2185b) !important;
+    color:#fff !important; border:none !important;
+    border-radius:10px !important; font-weight:800 !important;
+    font-size:1rem !important; padding:.65rem 2rem !important;
+    box-shadow:0 4px 14px rgba(233,30,99,.35) !important;
+    width:100%;
+}
+div[data-testid="stButton"] > button:hover {
+    background:linear-gradient(135deg,#ad1457,#880e4f) !important;
+}
 
-  /* Dataframes */
-  .stDataFrame { border-radius: 10px; overflow: hidden; }
+/* ── Tabs ── */
+.stTabs [data-baseweb="tab-list"] {
+    background:#fce4ec; border-radius:10px; padding:4px;
+}
+.stTabs [data-baseweb="tab"] { color:#ad1457; font-weight:600; }
+.stTabs [aria-selected="true"] {
+    background:#e91e63 !important; color:#fff !important; border-radius:8px;
+}
 
-  /* Botones */
-  .stButton > button {
-      background: linear-gradient(135deg, #e91e63, #c2185b);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-weight: 700;
-      padding: 0.5rem 1.5rem;
-  }
-  .stButton > button:hover {
-      background: linear-gradient(135deg, #ad1457, #880e4f);
-  }
-
-  /* Expander */
-  .streamlit-expanderHeader {
-      background: #fce4ec !important;
-      border-radius: 8px !important;
-      color: #880e4f !important;
-      font-weight: 700 !important;
-  }
-
-  /* Tabs */
-  .stTabs [data-baseweb="tab-list"] {
-      background: #fce4ec;
-      border-radius: 10px;
-      padding: 4px;
-  }
-  .stTabs [data-baseweb="tab"] {
-      color: #ad1457;
-      font-weight: 600;
-  }
-  .stTabs [aria-selected="true"] {
-      background: #e91e63 !important;
-      color: white !important;
-      border-radius: 8px;
-  }
-
-  /* Scrollbar */
-  ::-webkit-scrollbar { width: 6px; }
-  ::-webkit-scrollbar-thumb { background: #f48fb1; border-radius: 3px; }
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width:5px; }
+::-webkit-scrollbar-thumb { background:#f48fb1; border-radius:3px; }
 </style>
 """, unsafe_allow_html=True)
 
 
-# ── Resolver ──────────────────────────────────────────────────────────────────
-@st.cache_data
-def get_solution():
-    return solve()
+# ─────────────────────────────────────────────────────────────────────────────
+# HELPERS
+# ─────────────────────────────────────────────────────────────────────────────
+def pink_scale(val: float, max_val: float):
+    """Devuelve estilo CSS en escala rosa sin matplotlib."""
+    if max_val == 0:
+        return ""
+    ratio = max(0.0, min(1.0, val / max_val))
+    r = int(255 - ratio * 30)
+    g = int(255 - ratio * 175)
+    b = int(255 - ratio * 155)
+    text = "#fff" if ratio > 0.6 else ("#880e4f" if ratio > 0.25 else "#4a0e2a")
+    return f"background-color:rgb({r},{g},{b});color:{text};font-weight:600"
 
-result = get_solution()
+
+def sec(title: str):
+    st.markdown(f'<div class="sec-title">{title}</div>', unsafe_allow_html=True)
+
+
+def kpi_card(col, value, label):
+    col.markdown(
+        f'<div class="kpi-card">'
+        f'<div class="kpi-number">{value}</div>'
+        f'<div class="kpi-label">{label}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+
+PLOTLY_BASE = dict(
+    plot_bgcolor="rgba(0,0,0,0)",
+    paper_bgcolor="rgba(0,0,0,0)",
+    font_color="#880e4f",
+    margin=dict(l=0, r=0, t=10, b=0),
+)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SIDEBAR — PARÁMETROS EDITABLES
+# ─────────────────────────────────────────────────────────────────────────────
+with st.sidebar:
+    st.markdown("## 🌺 Parámetros del modelo")
+    st.markdown("---")
+
+    st.markdown("### 🚛 Operativos")
+    capacity     = st.slider("Capacidad camión (pallets)", 8, 48, DEFAULT_CAPACITY, 2)
+    speed_kmh    = st.slider("Velocidad (km/h)", 20, 80, int(DEFAULT_SPEED_KMH), 5)
+    min_per_stop = st.slider("Tiempo por parada (min)", 5, 40, int(DEFAULT_MIN_PER_STOP), 1)
+    min_per_pal  = st.slider("Tiempo por pallet (min)", 1, 10, int(DEFAULT_MIN_PER_PAL), 1)
+    reload_min   = st.slider("Reload entre trips (min)", 5, 60, int(DEFAULT_RELOAD_MIN), 5)
+    jornada_h    = st.slider("Jornada laboral (horas)", 6, 12, 8, 1)
+    jornada_min  = jornada_h * 60
+
+    st.markdown("---")
+    st.markdown("### 📦 Demanda por cantón (pallets/sem)")
+    demand_custom: dict = {}
+    for nodo, canton in CANTONES.items():
+        if nodo == 0:
+            continue
+        demand_custom[nodo] = st.number_input(
+            canton, min_value=0, max_value=500,
+            value=int(DEMAND_BASE[nodo]), step=1, key=f"dem_{nodo}",
+        )
+    demand_custom[0] = 0
+
+    st.markdown("---")
+    st.markdown("### 🍺 Mix de productos")
+    pct_imp = st.slider("% Imperial", 0, 100, 50, 5) / 100
+    pct_pil = st.slider("% Pilsen",   0, 100, 25, 5) / 100
+    pct_tro = st.slider("% Tropical", 0, 100, 25, 5) / 100
+    total_pct = pct_imp + pct_pil + pct_tro
+    if abs(total_pct - 1.0) > 0.01:
+        st.warning(f"⚠ El mix suma {total_pct*100:.0f}% (debe ser 100%)")
+
+    st.markdown("---")
+    run_btn = st.button("🚀 Optimizar rutas")
+
+    st.markdown("---")
+    st.caption("II-1122 · Clase 13 · UCR Sede Alajuela")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ESTADO Y EJECUCIÓN
+# ─────────────────────────────────────────────────────────────────────────────
+if "result" not in st.session_state:
+    # Carga inicial con parámetros por defecto
+    st.session_state.result = solve()
+    st.session_state.ran = False
+
+if run_btn:
+    if abs(total_pct - 1.0) > 0.01:
+        st.sidebar.error("Corrige el mix de productos antes de optimizar.")
+    else:
+        with st.spinner("Optimizando rutas…"):
+            st.session_state.result = solve(
+                demand=demand_custom,
+                capacity=capacity,
+                speed_kmh=float(speed_kmh),
+                min_per_stop=float(min_per_stop),
+                min_per_pal=float(min_per_pal),
+                reload_min=float(reload_min),
+                jornada_min=float(jornada_min),
+                pct_imp=pct_imp,
+                pct_pil=pct_pil,
+                pct_tro=pct_tro,
+            )
+        st.session_state.ran = True
+
+result = st.session_state.result
 trips  = result["trips"]
 trucks = result["trucks"]
+demand = result["demand"]
+params = result["params"]
 
 
-# ── Header ────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# HEADER
+# ─────────────────────────────────────────────────────────────────────────────
 st.markdown("""
 <div class="main-header">
   <h1>🌺 CVRP · Provincia de Puntarenas</h1>
@@ -176,28 +219,24 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+if st.session_state.ran:
+    st.success("✅ Optimización completada con los parámetros configurados.")
 
-# ── KPIs ──────────────────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# KPIs
+# ─────────────────────────────────────────────────────────────────────────────
 c1, c2, c3, c4, c5 = st.columns(5)
-kpis = [
-    (sum(DEMAND.values()), "pallets / semana", c1),
-    (len(trips),           "trips totales",    c2),
-    (len(trucks),          "camiones físicos", c3),
-    (f"{result['total_km']:,.0f}", "km totales", c4),
-    (sum(1 for tk in trucks if any(t.is_dedicated() for t in tk.trips)),
-     "camiones dedicados", c5),
-]
-for val, label, col in kpis:
-    col.markdown(f"""
-    <div class="kpi-card">
-      <div class="kpi-number">{val}</div>
-      <div class="kpi-label">{label}</div>
-    </div>""", unsafe_allow_html=True)
-
+kpi_card(c1, sum(demand.values()), "pallets / semana")
+kpi_card(c2, len(trips),           "trips totales")
+kpi_card(c3, len(trucks),          "camiones físicos")
+kpi_card(c4, f"{result['total_km']:,.0f}", "km totales")
+kpi_card(c5, result["num_dedicated"], "camiones dedicados")
 st.markdown("<br>", unsafe_allow_html=True)
 
 
-# ── Tabs principales ──────────────────────────────────────────────────────────
+# ─────────────────────────────────────────────────────────────────────────────
+# TABS
+# ─────────────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4 = st.tabs([
     "📦 Demanda & Cantones",
     "🚛 Trips",
@@ -210,66 +249,61 @@ tab1, tab2, tab3, tab4 = st.tabs([
 # TAB 1 — DEMANDA
 # ══════════════════════════════════════════════════════════════════════════════
 with tab1:
-    col_left, col_right = st.columns([1, 1])
+    col_l, col_r = st.columns(2)
 
-    with col_left:
-        st.markdown('<div class="section-title">Demanda por cantón (pallets/semana)</div>',
-                    unsafe_allow_html=True)
+    with col_l:
+        sec("Demanda por cantón (pallets/semana)")
         rows = []
+        cap_used = params["capacity"]
         for nodo, canton in CANTONES.items():
             if nodo == 0:
                 continue
-            d = DEMAND[nodo]
+            d = demand.get(nodo, 0)
             rows.append({
                 "Nodo": nodo,
                 "Cantón": canton,
-                "Imperial (50%)": DEMAND_IMPERIAL[nodo],
-                "Pilsen (25%)": DEMAND_PILSEN[nodo],
-                "Tropical (25%)": DEMAND_TROPICAL[nodo],
+                f"Imperial ({pct_imp*100:.0f}%)": result["demand_imp"].get(nodo, 0),
+                f"Pilsen ({pct_pil*100:.0f}%)":   result["demand_pil"].get(nodo, 0),
+                f"Tropical ({pct_tro*100:.0f}%)": result["demand_tro"].get(nodo, 0),
                 "Total": d,
-                "Full-loads (24)": d // CAPACITY,
-                "Residuo": d % CAPACITY,
+                f"Full-loads ({cap_used})": d // cap_used,
+                "Residuo": d % cap_used,
             })
         df_demand = pd.DataFrame(rows)
+        max_d = df_demand["Total"].max() or 1
+
+        def style_demand(val):
+            return pink_scale(val, max_d)
+
         st.dataframe(
-            df_demand.style
-                .background_gradient(subset=["Total"], cmap="RdPu")
-                .format({"Total": "{:,}"}),
+            df_demand.style.map(style_demand, subset=["Total"]),
             use_container_width=True, hide_index=True,
         )
 
-    with col_right:
-        st.markdown('<div class="section-title">Distribución de demanda</div>',
-                    unsafe_allow_html=True)
+    with col_r:
+        sec("Distribución de demanda")
         fig_bar = px.bar(
             df_demand, x="Cantón", y="Total",
             color="Total",
             color_continuous_scale=["#fce4ec", "#e91e63", "#880e4f"],
             labels={"Total": "Pallets/semana"},
         )
-        fig_bar.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            xaxis_tickangle=-40,
-            margin=dict(l=0, r=0, t=10, b=0),
-            coloraxis_showscale=False,
-            font_color="#880e4f",
-        )
+        fig_bar.update_layout(**PLOTLY_BASE, xaxis_tickangle=-40,
+                              coloraxis_showscale=False)
         st.plotly_chart(fig_bar, use_container_width=True)
 
-        # Pie productos
+        total_dem = sum(d for k, d in demand.items() if k != 0) or 1
         fig_pie = go.Figure(go.Pie(
-            labels=["Imperial 50%", "Pilsen 25%", "Tropical 25%"],
-            values=[195, 98, 98],
+            labels=[f"Imperial {pct_imp*100:.0f}%",
+                    f"Pilsen {pct_pil*100:.0f}%",
+                    f"Tropical {pct_tro*100:.0f}%"],
+            values=[round(total_dem * pct_imp),
+                    round(total_dem * pct_pil),
+                    round(total_dem * pct_tro)],
             hole=0.5,
             marker_colors=["#e91e63", "#f48fb1", "#f8bbd0"],
         ))
-        fig_pie.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            margin=dict(l=0, r=0, t=10, b=0),
-            font_color="#880e4f",
-            showlegend=True,
-        )
+        fig_pie.update_layout(**PLOTLY_BASE, showlegend=True)
         st.plotly_chart(fig_pie, use_container_width=True)
 
 
@@ -277,192 +311,191 @@ with tab1:
 # TAB 2 — TRIPS
 # ══════════════════════════════════════════════════════════════════════════════
 with tab2:
-    st.markdown('<div class="section-title">Detalle de cada trip</div>',
-                unsafe_allow_html=True)
+    sec("Detalle de cada trip")
 
     trip_rows = []
     for idx, trip in enumerate(trips, 1):
-        ruta_str = " → ".join(
-            ["CD"] + [CANTONES[n] for n in trip.route] + ["CD"]
-        )
-        dedicated = "⚠ Dedicado" if trip.is_dedicated() else "Normal"
+        ruta = " → ".join(["CD"] + [CANTONES[n] for n in trip.route] + ["CD"])
         trip_rows.append({
             "Trip": idx,
-            "Ruta": ruta_str,
+            "Ruta": ruta,
             "Paradas": len(trip.route),
             "Carga (pallets)": trip.load,
             "Dist. (km)": round(trip.distance_km, 1),
             "Duración (min)": round(trip.duration_min, 1),
             "Duración (h)": round(trip.duration_min / 60, 2),
-            "Tipo": dedicated,
+            "Tipo": "⚠ Dedicado" if trip.is_dedicated() else "Normal",
         })
     df_trips = pd.DataFrame(trip_rows)
+    max_dist_t = df_trips["Dist. (km)"].max() or 1
 
-    def color_tipo(val):
+    def style_tipo_trip(val):
         if "Dedicado" in str(val):
-            return "background-color:#fce4ec; color:#c2185b; font-weight:700"
-        return "background-color:#f3e5f5; color:#6a1b9a"
+            return "background-color:#fce4ec;color:#c2185b;font-weight:700"
+        return "background-color:#f3e5f5;color:#6a1b9a;font-weight:600"
+
+    def style_dist_trip(val):
+        return pink_scale(val, max_dist_t)
 
     st.dataframe(
         df_trips.style
-            .applymap(color_tipo, subset=["Tipo"])
-            .background_gradient(subset=["Dist. (km)"], cmap="RdPu"),
+            .map(style_tipo_trip, subset=["Tipo"])
+            .map(style_dist_trip, subset=["Dist. (km)"]),
         use_container_width=True, hide_index=True,
     )
 
-    # Gráfico duración de trips
-    st.markdown('<div class="section-title">Duración de trips vs límite jornada</div>',
-                unsafe_allow_html=True)
-    fig_trip_dur = go.Figure()
-    colors = ["#e91e63" if t.is_dedicated() else "#f48fb1" for t in trips]
-    fig_trip_dur.add_trace(go.Bar(
-        x=[f"Trip {i+1}" for i in range(len(trips))],
+    sec("Duración de trips vs límite de jornada")
+    j_lim = params["jornada_min"]
+    colors_t = ["#e91e63" if t.is_dedicated() else "#f48fb1" for t in trips]
+    fig_dur = go.Figure(go.Bar(
+        x=[f"T{i+1}" for i in range(len(trips))],
         y=[round(t.duration_min, 1) for t in trips],
-        marker_color=colors,
-        name="Duración (min)",
+        marker_color=colors_t,
+        text=[f"{t.duration_min/60:.1f}h" for t in trips],
+        textposition="outside",
     ))
-    fig_trip_dur.add_hline(
-        y=JORNADA_MIN, line_dash="dash",
-        line_color="#880e4f", line_width=2,
-        annotation_text="Límite 8 h (480 min)",
+    fig_dur.add_hline(
+        y=j_lim, line_dash="dash", line_color="#880e4f", line_width=2,
+        annotation_text=f"Límite jornada ({j_lim/60:.0f} h)",
         annotation_font_color="#880e4f",
     )
-    fig_trip_dur.update_layout(
-        plot_bgcolor="rgba(0,0,0,0)",
-        paper_bgcolor="rgba(0,0,0,0)",
-        margin=dict(l=0, r=0, t=10, b=0),
-        font_color="#880e4f",
-        yaxis_title="Minutos",
-    )
-    st.plotly_chart(fig_trip_dur, use_container_width=True)
+    fig_dur.update_layout(**PLOTLY_BASE, yaxis_title="Minutos",
+                          xaxis_title="Trip")
+    st.plotly_chart(fig_dur, use_container_width=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 3 — CAMIONES
 # ══════════════════════════════════════════════════════════════════════════════
 with tab3:
-    st.markdown('<div class="section-title">Asignación de trips a camiones (bin-packing 8 h)</div>',
-                unsafe_allow_html=True)
+    sec("Asignación de trips a camiones (bin-packing)")
 
     truck_rows = []
     for tk in trucks:
         is_ded = any(t.is_dedicated() for t in tk.trips)
-        trips_str = " | ".join(
+        rutas = " | ".join(
             " → ".join(["CD"] + [CANTONES[n] for n in t.route] + ["CD"])
             for t in tk.trips
         )
+        jorn_pct = tk.total_time_min() / params["jornada_min"] * 100
         truck_rows.append({
-            "Camión": tk.truck_id,
-            "# Trips": len(tk.trips),
-            "Tiempo total (min)": round(tk.total_time_min(), 1),
-            "Tiempo total (h)": round(tk.total_time_min() / 60, 2),
-            "% Jornada": f"{tk.total_time_min()/JORNADA_MIN*100:.0f}%",
-            "Km totales": round(tk.total_distance_km(), 1),
-            "Pallets totales": tk.total_pallets(),
-            "Tipo": "⚠ Dedicado" if is_ded else "Multi-trip",
-            "Trips (rutas)": trips_str,
+            "Camión":        tk.truck_id,
+            "Trips":         len(tk.trips),
+            "Tiempo (min)":  round(tk.total_time_min(), 1),
+            "Tiempo (h)":    round(tk.total_time_min() / 60, 2),
+            "% Jornada":     round(jorn_pct, 1),
+            "Km totales":    round(tk.total_distance_km(), 1),
+            "Pallets":       tk.total_pallets(),
+            "Tipo":          "⚠ Dedicado" if is_ded else "Multi-trip",
+            "Rutas":         rutas,
         })
     df_trucks = pd.DataFrame(truck_rows)
+    max_km_t = df_trucks["Km totales"].max() or 1
 
-    def color_truck_tipo(val):
+    def style_tipo_truck(val):
         if "Dedicado" in str(val):
-            return "background-color:#fce4ec; color:#c2185b; font-weight:700"
-        return "background-color:#e8f5e9; color:#2e7d32"
+            return "background-color:#fce4ec;color:#c2185b;font-weight:700"
+        return "background-color:#e8f5e9;color:#1b5e20;font-weight:600"
+
+    def style_km_truck(val):
+        return pink_scale(val, max_km_t)
+
+    def style_pct(val):
+        try:
+            pct = float(val)
+        except Exception:
+            return ""
+        if pct > 100:
+            return "background-color:#ffcdd2;color:#b71c1c;font-weight:700"
+        if pct > 85:
+            return "background-color:#fce4ec;color:#880e4f;font-weight:600"
+        return "background-color:#f3e5f5;color:#4a148c"
 
     st.dataframe(
         df_trucks.style
-            .applymap(color_truck_tipo, subset=["Tipo"])
-            .background_gradient(subset=["Km totales"], cmap="RdPu"),
+            .map(style_tipo_truck, subset=["Tipo"])
+            .map(style_km_truck,   subset=["Km totales"])
+            .map(style_pct,        subset=["% Jornada"]),
         use_container_width=True, hide_index=True,
     )
 
-    # Gantt de camiones
-    st.markdown('<div class="section-title">Utilización de jornada por camión</div>',
-                unsafe_allow_html=True)
+    # ── Gantt horizontal ──────────────────────────────────────────────────────
+    sec("Utilización de jornada por camión")
 
-    gantt_data = []
+    rl = params["reload_min"]
+    jl = params["jornada_min"]
+    palette = ["#e91e63", "#f06292", "#f48fb1", "#f8bbd0",
+               "#ce93d8", "#ba68c8", "#9c27b0", "#ad1457"]
+    fig_h = go.Figure()
     for tk in trucks:
-        cursor = 0
+        cursor = 0.0
         for i, trip in enumerate(tk.trips):
-            gantt_data.append({
-                "Camión": f"Camión {tk.truck_id}",
-                "Inicio": cursor,
-                "Fin": cursor + trip.duration_min,
-                "Trip": f"Trip {trips.index(trip)+1}",
-            })
-            cursor += trip.duration_min + RELOAD_MIN
-
-    df_gantt = pd.DataFrame(gantt_data)
-    if not df_gantt.empty:
-        fig_gantt = px.timeline(
-            df_gantt,
-            x_start="Inicio", x_end="Fin", y="Camión",
-            color="Trip",
-            color_discrete_sequence=px.colors.sequential.RdPu,
-            title="",
-        )
-        # Convertir a minutos (plotly timeline usa datetime internamente)
-        # Usar bar chart horizontal en su lugar
-        fig_h = go.Figure()
-        palette = px.colors.sequential.RdPu
-        for _, row in df_gantt.iterrows():
+            color = "#e91e63" if trip.is_dedicated() else palette[i % len(palette)]
+            label = f"T{trips.index(trip)+1} ({trip.duration_min:.0f}m)"
             fig_h.add_trace(go.Bar(
-                y=[row["Camión"]],
-                x=[row["Fin"] - row["Inicio"]],
-                base=[row["Inicio"]],
+                y=[f"Camión {tk.truck_id}"],
+                x=[trip.duration_min],
+                base=[cursor],
                 orientation="h",
-                name=row["Trip"],
-                marker_color=palette[hash(row["Trip"]) % len(palette)],
-                text=row["Trip"],
+                marker_color=color,
+                text=label,
                 textposition="inside",
+                insidetextanchor="middle",
+                name=label,
+                showlegend=False,
+                hovertemplate=(
+                    f"<b>Camión {tk.truck_id}</b><br>"
+                    f"Trip {trips.index(trip)+1}<br>"
+                    f"Duración: {trip.duration_min:.0f} min<br>"
+                    f"Dist: {trip.distance_km:.0f} km<br>"
+                    f"Carga: {trip.load} pallets<extra></extra>"
+                ),
             ))
-        fig_h.add_vline(x=JORNADA_MIN, line_dash="dash",
-                        line_color="#880e4f", line_width=2)
-        fig_h.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            barmode="stack",
-            showlegend=False,
-            xaxis_title="Minutos",
-            font_color="#880e4f",
-            margin=dict(l=0, r=0, t=10, b=0),
-        )
-        st.plotly_chart(fig_h, use_container_width=True)
+            cursor += trip.duration_min
+            if i < len(tk.trips) - 1:
+                # franja de reload
+                fig_h.add_trace(go.Bar(
+                    y=[f"Camión {tk.truck_id}"],
+                    x=[rl],
+                    base=[cursor],
+                    orientation="h",
+                    marker_color="#fce4ec",
+                    marker_line_color="#f48fb1",
+                    marker_line_width=1,
+                    text="reload",
+                    textposition="inside",
+                    insidetextanchor="middle",
+                    showlegend=False,
+                    hoverinfo="skip",
+                ))
+                cursor += rl
 
-    # Mapa de calor km por camión
+    fig_h.add_vline(x=jl, line_dash="dash", line_color="#880e4f", line_width=2,
+                    annotation_text=f"Límite {jl/60:.0f} h",
+                    annotation_font_color="#880e4f")
+    fig_h.update_layout(
+        **PLOTLY_BASE, barmode="stack",
+        xaxis_title="Minutos acumulados",
+        height=max(300, len(trucks) * 42 + 60),
+        yaxis=dict(autorange="reversed"),
+    )
+    st.plotly_chart(fig_h, use_container_width=True)
+
+    # ── Km y pallets ──────────────────────────────────────────────────────────
     col_a, col_b = st.columns(2)
     with col_a:
-        st.markdown('<div class="section-title">Km por camión</div>',
-                    unsafe_allow_html=True)
-        fig_km = px.bar(
-            df_trucks, x="Camión", y="Km totales",
-            color="Km totales",
-            color_continuous_scale=["#fce4ec", "#e91e63", "#880e4f"],
-        )
-        fig_km.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            coloraxis_showscale=False,
-            font_color="#880e4f",
-            margin=dict(l=0, r=0, t=10, b=0),
-        )
+        sec("Km por camión")
+        fig_km = px.bar(df_trucks, x="Camión", y="Km totales",
+                        color="Km totales",
+                        color_continuous_scale=["#fce4ec", "#e91e63", "#880e4f"])
+        fig_km.update_layout(**PLOTLY_BASE, coloraxis_showscale=False)
         st.plotly_chart(fig_km, use_container_width=True)
-
     with col_b:
-        st.markdown('<div class="section-title">Pallets por camión</div>',
-                    unsafe_allow_html=True)
-        fig_pal = px.bar(
-            df_trucks, x="Camión", y="Pallets totales",
-            color="Pallets totales",
-            color_continuous_scale=["#f3e5f5", "#ce93d8", "#6a1b9a"],
-        )
-        fig_pal.update_layout(
-            plot_bgcolor="rgba(0,0,0,0)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            coloraxis_showscale=False,
-            font_color="#880e4f",
-            margin=dict(l=0, r=0, t=10, b=0),
-        )
+        sec("Pallets por camión")
+        fig_pal = px.bar(df_trucks, x="Camión", y="Pallets",
+                         color="Pallets",
+                         color_continuous_scale=["#f3e5f5", "#ce93d8", "#7b1fa2"])
+        fig_pal.update_layout(**PLOTLY_BASE, coloraxis_showscale=False)
         st.plotly_chart(fig_pal, use_container_width=True)
 
 
@@ -470,95 +503,71 @@ with tab3:
 # TAB 4 — MODELO CVRP
 # ══════════════════════════════════════════════════════════════════════════════
 with tab4:
-    col_m1, col_m2 = st.columns([1, 1])
+    col_m1, col_m2 = st.columns(2)
 
     with col_m1:
-        st.markdown('<div class="section-title">Variables de decisión</div>',
-                    unsafe_allow_html=True)
+        sec("Variables de decisión")
         st.markdown("""
-        | Variable | Tipo | Descripción |
-        |---|---|---|
-        | `y(i,j)` | Entera ≥ 0 | Camiones que transitan el arco i→j |
-        | `f(i,j)` | Continua ≥ 0 | Pallets transportados en el arco i→j |
-        """)
-
-        st.markdown('<div class="section-title">Función objetivo</div>',
-                    unsafe_allow_html=True)
-        st.latex(r"\min \; Z = \sum_{(i,j)\in A} \text{dist}(i,j) \cdot y(i,j)")
+| Variable | Tipo | Descripción |
+|---|---|---|
+| `y(i,j)` | Entera ≥ 0 | Camiones en el arco i→j |
+| `f(i,j)` | Continua ≥ 0 | Pallets en el arco i→j |
+""")
+        sec("Función objetivo")
+        st.latex(r"\min \; Z = \sum_{(i,j)\in A} \mathrm{dist}(i,j)\cdot y(i,j)")
         st.caption("Minimiza la distancia total recorrida por toda la flota (km).")
 
     with col_m2:
-        st.markdown('<div class="section-title">Restricciones</div>',
-                    unsafe_allow_html=True)
-        st.markdown("""
-        **① Balance de camiones** — flujo de camiones conservado en cada nodo:
-        """)
-        st.latex(r"\sum_j y(i,j) = \sum_j y(j,i) \quad \forall i")
-
-        st.markdown("**② Balance de carga** — pallets entran − salen = demanda:")
-        st.latex(r"\sum_j f(j,i) - \sum_j f(i,j) = d_i \quad \forall i \neq 0")
-
-        st.markdown("**③ Carga total desde CD** — suma de todos los pallets despachados:")
-        st.latex(r"\sum_j f(0,j) = D_{\text{total}}")
-
+        sec("Restricciones")
+        st.markdown("**① Balance de camiones** — conservación de flujo:")
+        st.latex(r"\sum_j y(i,j) = \sum_j y(j,i) \quad \forall\, i")
+        st.markdown("**② Balance de carga** — demanda satisfecha:")
+        st.latex(r"\sum_j f(j,i) - \sum_j f(i,j) = d_i \quad \forall\, i \neq 0")
+        st.markdown("**③ Carga total desde CD:**")
+        st.latex(r"\sum_j f(0,j) = D_{\mathrm{total}}")
         st.markdown("**④ Capacidad por arco** *(restricción clave)*:")
-        st.latex(r"f(i,j) \leq 24 \cdot y(i,j) \quad \forall (i,j)")
-        st.info("⚡ Esta restricción garantiza que ningún camión transporte más de 24 pallets.")
+        st.latex(r"f(i,j) \leq C \cdot y(i,j) \quad \forall\,(i,j)")
+        st.info(f"⚡ Capacidad C = **{params['capacity']} pallets**. "
+                "Ningún camión puede cargar más de eso en un arco.")
 
-    st.markdown('<div class="section-title">Parámetros operativos</div>',
-                unsafe_allow_html=True)
-    params_data = {
-        "Parámetro": ["Capacidad camión", "Velocidad", "Tiempo/parada", "Tiempo/pallet",
-                      "Reload entre trips", "Jornada"],
-        "Valor": ["24 pallets", "40 km/h", "15 min", "3 min", "20 min", "8 h (480 min)"],
-        "Uso": [
-            "f(i,j) ≤ 24·y(i,j)",
+    sec("Parámetros activos")
+    p = params
+    params_df = pd.DataFrame({
+        "Parámetro":  ["Capacidad", "Velocidad", "Tiempo/parada",
+                       "Tiempo/pallet", "Reload", "Jornada"],
+        "Valor": [f"{p['capacity']} pallets", f"{p['speed_kmh']} km/h",
+                  f"{p['min_per_stop']} min",  f"{p['min_per_pal']} min",
+                  f"{p['reload_min']} min",     f"{p['jornada_min']/60:.0f} h ({p['jornada_min']:.0f} min)"],
+        "Restricción / uso": [
+            "f(i,j) ≤ C·y(i,j)",
             "km/vel×60 → duración trip",
-            "+15 min por cantón visitado",
-            "+3 min por pallet entregado",
-            "Tiempo entre trips del mismo camión",
-            "Bin-packing: suma trips + reloads ≤ 480",
+            "+min/parada por cantón visitado",
+            "+min/pallet por pallet entregado",
+            "tiempo entre trips del mismo camión",
+            "bin-packing: Σtrips + Σreloads ≤ jornada",
         ],
-    }
-    st.dataframe(pd.DataFrame(params_data), use_container_width=True, hide_index=True)
+    })
+    st.dataframe(params_df, use_container_width=True, hide_index=True)
 
-    st.markdown('<div class="section-title">Fórmula de duración de trip</div>',
-                unsafe_allow_html=True)
+    sec("Fórmula de duración de trip")
     st.latex(
-        r"T_{\text{trip}} = \frac{\text{km\_total}}{40} \times 60 "
-        r"+ \text{paradas} \times 15 "
-        r"+ \text{pallets} \times 3 \quad [\text{minutos}]"
+        r"T = \frac{\mathrm{km}}{v}\times 60"
+        r"+ n_{\mathrm{paradas}}\times t_{\mathrm{stop}}"
+        r"+ n_{\mathrm{pallets}}\times t_{\mathrm{pal}}"
+        r"\quad [\mathrm{min}]"
     )
 
-    with st.expander("📊 Matriz de distancias (km)"):
+    with st.expander("📊 Matriz de distancias por carretera (km)"):
         labels = [CANTONES[i] for i in range(14)]
         df_dist = pd.DataFrame(DIST, index=labels, columns=labels)
+        max_d_val = max(max(row) for row in DIST)
+
+        def style_dist_cell(val):
+            if val == 0:
+                return "background-color:#fce4ec;color:#c2185b;font-weight:700"
+            return pink_scale(val, max_d_val)
+
         st.dataframe(
-            df_dist.style.background_gradient(cmap="RdPu", axis=None),
+            df_dist.style.map(style_dist_cell),
             use_container_width=True,
         )
-
-
-# ── Sidebar: resumen ejecutivo ────────────────────────────────────────────────
-with st.sidebar:
-    st.markdown("### 🌺 Resumen Ejecutivo")
-    st.markdown("---")
-    st.metric("Demanda total", f"{sum(DEMAND.values())} pallets")
-    st.metric("Trips generados", len(trips))
-    st.metric("Camiones requeridos", len(trucks))
-    st.metric("Km totales", f"{result['total_km']:,.0f} km")
-    st.metric("Camiones dedicados",
-              sum(1 for tk in trucks if any(t.is_dedicated() for t in tk.trips)))
-    st.markdown("---")
-    st.markdown("**Provincia:** Puntarenas")
-    st.markdown("**Cantones:** 13")
-    st.markdown("**Productos:** Imperial · Pilsen · Tropical")
-    st.markdown("**Capacidad:** 24 pallets/camión")
-    st.markdown("---")
-    st.markdown("**Hitos completados:**")
-    st.markdown("✅ Hito 1 — Demand & Dataset")
-    st.markdown("✅ Hito 2 — Modelo CVRP")
-    st.markdown("✅ Hito 3 — Trips (Nivel 1)")
-    st.markdown("✅ Hito 4 — Trucks (Nivel 2)")
-    st.markdown("---")
-    st.caption("II-1122 · Clase 13 · UCR Sede Alajuela")
